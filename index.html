@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Swipe Game</title>
+
+<style>
+body {
+  margin: 0;
+  background: #111;
+  color: white;
+  overflow: hidden;
+  font-family: sans-serif;
+}
+
+#ui {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 10;
+}
+
+button {
+  font-size: 18px;
+  padding: 8px 16px;
+  margin-top: 4px;
+}
+
+#game {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+}
+
+.object {
+  width: 40px;
+  height: 40px;
+  background: #4caf50;
+  border-radius: 8px;
+  position: absolute;
+  transition: transform 0.2s;
+}
+
+#eraser {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 2px solid cyan;
+  background: rgba(0,255,255,0.15);
+  position: fixed;
+  pointer-events: none;
+  display: none;
+  z-index: 5;
+}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+  <div id="money">💰 0円</div>
+  <div>価値 Lv.<span id="value">1</span></div>
+  <button onclick="upgrade()">価値アップ (10円)</button>
+</div>
+
+<div id="game"></div>
+<div id="eraser"></div>
+
+<script>
+// ===== 基本 =====
+const game = document.getElementById("game");
+const eraser = document.getElementById("eraser");
+
+let money = 0;
+let value = 1;
+let upgradeCost = 10;
+let objects = [];
+let erasing = false;
+
+const eraserRadius = 30;
+
+// ===== コンボ =====
+let combo = 0;
+let comboTimer = null;
+const COMBO_RESET_TIME = 300;
+
+// ===== Audio =====
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function popSound() {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+
+  const freq = 600 + combo * 40;
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+  gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.1);
+}
+
+// iPhone音対策
+document.addEventListener("touchstart", () => {
+  if (audioCtx.state === "suspended") audioCtx.resume();
+}, { once: true });
+
+// ===== 物体生成（中央寄せ）=====
+function spawnObject() {
+  const obj = document.createElement("div");
+  obj.className = "object";
+
+  const centerX = innerWidth / 2;
+  const centerY = innerHeight / 2;
+
+  const rangeX = innerWidth * 0.25;
+  const rangeY = innerHeight * 0.25;
+
+  const x = centerX + (Math.random() - 0.5) * rangeX;
+  const y = centerY + (Math.random() - 0.5) * rangeY;
+
+  obj.style.left = Math.max(0, Math.min(innerWidth - 40, x)) + "px";
+  obj.style.top  = Math.max(0, Math.min(innerHeight - 40, y)) + "px";
+
+  game.appendChild(obj);
+  objects.push(obj);
+}
+
+for (let i = 0; i < 20; i++) spawnObject();
+
+// ===== タッチ操作 =====
+function getPos(e) {
+  const t = e.touches ? e.touches[0] : e;
+  return { x: t.clientX, y: t.clientY };
+}
+
+document.addEventListener("touchstart", () => {
+  erasing = true;
+  eraser.style.display = "block";
+});
+
+document.addEventListener("touchmove", e => {
+  if (!erasing) return;
+  const p = getPos(e);
+
+  eraser.style.left = p.x - eraserRadius + "px";
+  eraser.style.top  = p.y - eraserRadius + "px";
+
+  checkErase(p.x, p.y);
+});
+
+document.addEventListener("touchend", () => {
+  erasing = false;
+  eraser.style.display = "none";
+  combo = 0;
+});
+
+// ===== 消去判定 =====
+function checkErase(x, y) {
+  let removed = 0;
+
+  objects = objects.filter(obj => {
+    const r = obj.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const dist = Math.hypot(cx - x, cy - y);
+
+    if (dist < eraserRadius) {
+      combo++;
+      popSound();
+
+      if (navigator.vibrate) navigator.vibrate(15);
+
+      clearTimeout(comboTimer);
+      comboTimer = setTimeout(() => combo = 0, COMBO_RESET_TIME);
+
+      obj.style.transform = "scale(0)";
+      setTimeout(() => obj.remove(), 200);
+
+      removed++;
+      return false;
+    }
+    return true;
+  });
+
+  if (removed > 0) {
+    money += removed * value;
+    updateUI();
+    for (let i = 0; i < removed; i++) spawnObject();
+  }
+}
+
+// ===== UI =====
+function updateUI() {
+  document.getElementById("money").textContent = `💰 ${money}円`;
+  document.getElementById("value").textContent = value;
+}
+
+function upgrade() {
+  if (money >= upgradeCost) {
+    money -= upgradeCost;
+    value++;
+    upgradeCost = Math.floor(upgradeCost * 1.6);
+    document.querySelector("button").textContent =
+      `価値アップ (${upgradeCost}円)`;
+    updateUI();
+  }
+}
+</script>
+
+</body>
+</html>
